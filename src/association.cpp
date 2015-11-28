@@ -25,15 +25,14 @@ public:
     association.channels[1].name = msg->channels[1].name;
     association.channels[1].values.resize((int)msg->channels[1].values.size());
     association.header.frame_id = msg->header.frame_id;
+    association.header.stamp = msg->header.stamp;
 
     for(int i = 0; i < (int)msg->channels[1].values.size(); i++){
       association.points[i].x = msg->points[i].x;
       association.points[i].y = msg->points[i].y;
       association.channels[0].values[i] = msg->channels[0].values[i];
-
-      if(cluster_num_old == 0){
-        association.channels[1].values[i] = msg->channels[1].values[i];
-      }
+      
+      association.channels[1].values[i] = msg->channels[1].values[i];
 
       if(cluster_num < msg->channels[1].values[i] + 1){
         cluster_num = msg->channels[1].values[i] + 1;
@@ -41,33 +40,31 @@ public:
     }
     cluster_x.resize(cluster_num);
     cluster_y.resize(cluster_num);
-    cluster_intensity.resize(cluster_num);
     cluster_size.resize(cluster_num);
     cluster_association.resize(cluster_num);
     for(int i = 0; i < cluster_num; i++){
       cluster_x[i] = 0;
       cluster_y[i] = 0;
-      cluster_intensity[i] = 0;
       count = 0;
       for(int j = 0; j < (int)msg->points.size(); j++){
-        if(i == (int)msg->channels[1].values[j]){
+        if(i == msg->channels[1].values[j]){
           cluster_x[i] += msg->points[j].x;
           cluster_y[i] += msg->points[j].y;
-          cluster_intensity[i] += msg->channels[0].values[j];
           count += 1;
+
+          cluster_association[i] = i;
         }
       }
       cluster_x[i] = cluster_x[i] / count;
       cluster_y[i] = cluster_y[i] / count;
-      cluster_intensity[i] = cluster_intensity[i] / count;
 
     }
     for(int i = 0; i < cluster_num; i++){
       distance_max = 0;
       cluster_size[i] = 0;
       for(int j = 0; j < (int)msg->points.size(); j++){
-        if(i == (int)msg->channels[1].values[j]){
-          distance = hypotf(cluster_x[i] - msg->points[j].x, cluster_y[i] - msg->points[j].y);
+        if(i == association.channels[1].values[j]){
+          distance = hypotf(cluster_x[i] - association.points[j].x, cluster_y[i] - association.points[j].y);
           if(distance_max < distance){
             distance_max = distance;
           }
@@ -81,90 +78,112 @@ public:
   }
 
   void likelihood(){
-    Matrix4f cov;
-    Vector4f ave;
-    Vector4f variable;
-    Vector4f variable_ave;
-    int count, alpha = 1;
-    float log_f[cluster_num], ave_scalar, log_f_likelihood;
+    Matrix3f cov;
+    Vector3f ave;
+    Vector3f variable;
+    Vector3f variable_ave;
+    int i, j, k, count, alpha = 0;
+    float log_f[cluster_num], ave_scalar, log_f_likelihood[cluster_num_old], likelihood_value[cluster_num];
 
-    for(int i = 0; i < cluster_num; i++){
-      cluster_association[i] = cluster_num_old;
+    for(i = 0; i < cluster_num; i++){
+      cluster_association[i] = -1;
+      likelihood_value[i] = 0;
     }
 
-    for(int i = 0; i < cluster_num_old; i++){
-      cov = Matrix4f::Zero();
-      ave = Vector4f::Zero();
-      variable = Vector4f::Zero();
-      variable_ave = Vector4f::Zero();
-      for(int j = 0; j < cluster_num; j++){
-        cov(0, 0) += pow(cluster_x_old[i] - cluster_x[j], 2);
-        cov(1, 1) += pow(cluster_y_old[i] - cluster_y[j], 2);
-        cov(2, 2) += pow(cluster_intensity_old[i] - cluster_intensity[j], 2);
-        cov(3, 3) += pow(cluster_size_old[i] - cluster_size[j], 2);
-        cov(1, 0) += (cluster_y_old[i] - cluster_y[j]) * (cluster_x_old[i] - cluster_x[j]);
-        cov(2, 0) += (cluster_intensity_old[i] - cluster_intensity[j]) * (cluster_x_old[i] - cluster_x[j]);
-        cov(2, 1) += (cluster_intensity_old[i] - cluster_intensity[j]) * (cluster_y_old[i] - cluster_y[j]);
-        cov(3, 0) += (cluster_size_old[i] - cluster_size[j]) * (cluster_x_old[i] - cluster_x[j]);
-        cov(3, 1) += (cluster_size_old[i] - cluster_size[j]) * (cluster_y_old[i] - cluster_y[j]);
-        cov(3, 2) += (cluster_size_old[i] - cluster_size[j]) * (cluster_intensity_old[i] - cluster_intensity[j]);
-      }
-      cov(0, 0) = cov(0, 0) / cluster_num;
-      cov(1, 1) = cov(1, 1) / cluster_num;
-      cov(2, 2) = cov(2, 2) / cluster_num;
-      cov(3, 3) = cov(3, 3) / cluster_num;
-      cov(1, 0) = cov(1, 0) / cluster_num;
-      cov(2, 0) = cov(2, 0) / cluster_num;
-      cov(2, 1) = cov(2, 1) / cluster_num;
-      cov(3, 0) = cov(3, 0) / cluster_num;
-      cov(3, 1) = cov(3, 1) / cluster_num;
-      cov(3, 2) = cov(3, 2) / cluster_num;
-      cov(0, 1) = cov(1, 0);
-      cov(0, 2) = cov(2, 0);
-      cov(1, 2) = cov(2, 1);
-      cov(0, 3) = cov(3, 0);
-      cov(1, 3) = cov(3, 1);
-      cov(2, 3) = cov(3, 2);
+    for(i = 0; i < association_num_max; i++){
+      if(cluster_x_old[i] == 0 && cluster_y_old[i] == 0 && cluster_size_old[i] == 0){
+      }else{
+        //
+        ROS_INFO("old:%d, cluster_x_old:%f, cluster_y_old:%f, cluster_size_old:%f", i, cluster_x_old[i], cluster_y_old[i], cluster_size_old[i]);
 
-      ave(0) = cluster_x_old[i];
-      ave(1) = cluster_y_old[i];
-      ave(2) = cluster_intensity_old[i];
-      ave(3) = cluster_size_old[i];
-      log_f_likelihood = false;
-      for(int j = 0; j < cluster_num; j++){
-        variable(0) = cluster_x[j];
-        variable(1) = cluster_y[j];
-        variable(2) = cluster_intensity[j];
-        variable(3) = cluster_size[j];
-        variable_ave = variable - ave;
-        ave_scalar = variable_ave.transpose() * cov.inverse() * variable_ave;
-
-        //多変量正規分布
-        log_f[j] = log(exp(- ave_scalar / 2) / sqrt(pow(2 * M_PI, 4) * cov.determinant()));
-
-        if(log_f_likelihood < log_f[j] || log_f_likelihood == false){
-          log_f_likelihood = log_f[j];
+        cov = Matrix3f::Zero();
+        ave = Vector3f::Zero();
+        variable = Vector3f::Zero();
+        variable_ave = Vector3f::Zero();
+        for(j = 0; j < cluster_num; j++){
+          cov(0, 0) += pow(cluster_x_old[i] - cluster_x[j], 2);
+          cov(1, 1) += pow(cluster_y_old[i] - cluster_y[j], 2);
+          cov(2, 2) += pow(cluster_size_old[i] - cluster_size[j], 2);
+          cov(1, 0) += (cluster_y_old[i] - cluster_y[j]) * (cluster_x_old[i] - cluster_x[j]);
+          cov(2, 0) += (cluster_size_old[i] - cluster_size[j]) * (cluster_x_old[i] - cluster_x[j]);
+          cov(2, 1) += (cluster_size_old[i] - cluster_size[j]) * (cluster_y_old[i] - cluster_y[j]);
         }
-      }
-      if(isnan(log_f_likelihood)){
-        cluster_association[i] = i;
-      }
-      for(int j = 0; j < cluster_num; j++){
-        if(log_f_likelihood == log_f[j] && !isnan(log_f[j])){
-          cluster_association[j] = i;
+        cov(0, 0) = cov(0, 0) / cluster_num;
+        cov(1, 1) = cov(1, 1) / cluster_num;
+        cov(2, 2) = cov(2, 2) / cluster_num;
+        cov(1, 0) = cov(1, 0) / cluster_num;
+        cov(2, 0) = cov(2, 0) / cluster_num;
+        cov(2, 1) = cov(2, 1) / cluster_num;
+        cov(0, 1) = cov(1, 0);
+        cov(0, 2) = cov(2, 0);
+        cov(1, 2) = cov(2, 1);
+
+        ave(0) = cluster_x_old[i];
+        ave(1) = cluster_y_old[i];
+        ave(2) = cluster_size_old[i];
+        log_f_likelihood[i] = -1;
+
+        for(j = 0; j < cluster_num; j++){
+          log_f[j] = hypotf(cluster_x[j] - cluster_x_old[i], cluster_y[j] - cluster_y_old[i]);
+          if(log_f_likelihood[i] > log_f[j] || log_f_likelihood[i] == -1){
+            log_f_likelihood[i] = log_f[j];
+          }
+
+          /*
+             variable(0) = cluster_x[j];
+             variable(1) = cluster_y[j];
+             variable(2) = cluster_size[j];
+             variable_ave = variable - ave;
+             ave_scalar = variable_ave.transpose() * cov.inverse() * variable_ave;
+
+          //多変量正規分布
+          log_f[j] = log(exp(- ave_scalar / 2) / sqrt(pow(2 * M_PI, 3) * cov.determinant()));
+
+          if(log_f_likelihood[i] < log_f[j] || log_f_likelihood[i] == false){
+          log_f_likelihood[i] = log_f[j];
+          }*/
+        }
+
+        for(j = 0; j < cluster_num; j++){
+          if(log_f_likelihood[i] == log_f[j]){
+            if(cluster_association[j] == -1){
+              likelihood_value[j] = log_f_likelihood[i];
+              cluster_association[j] = i;
+            }else{
+              if(likelihood_value[j] > log_f_likelihood[i]){
+                likelihood_value[j] = log_f_likelihood[i];
+                cluster_association[j] = i;
+              }else{
+                cluster_association[j] = -1;
+              }
+            }
+            break;
+          }
         }
       }
     }
-    for(int i = 0; i < cluster_num; i++){
-      if(cluster_association[i] == cluster_num_old){
-        cluster_association[i] = cluster_num_old + alpha;
-        alpha += 1;
+    for(i = 0; i < cluster_num; i++){
+      if(cluster_association[i] == -1){
+        for(j = 0; j < cluster_num; j++){
+          for(k = 0; k < cluster_num; k++){
+            if(j == cluster_association[k]){
+              break;
+            }else if(k == cluster_num -1){
+              cluster_association[i] = j;
+            }
+          }
+        }
       }
+    }
+    //
+    for(i = 0; i < cluster_num; i++){
+      ROS_INFO("now:%d, cluster_x:%f, cluster_y:%f, cluster_size:%f, cluster_association:%d", i, cluster_x[i], cluster_y[i], cluster_size[i], cluster_association[i]);
     }
   }
 
   void run(){
     check = false;
+    int a = 0;//
     while(ros::ok()){
       if(check == true){
         if(cluster_num_old != 0){
@@ -172,28 +191,37 @@ public:
           for(int i = 0; i < cluster_num; i++){
             for(int j = 0; j < (int)association.channels[1].values.size(); j++){
               if(i == association.channels[1].values[j]){
-                //
-                ROS_INFO("num:%d, clus_asso:%d", i, cluster_association[i]);
                 association.channels[1].values[j] = cluster_association[i];
               }
             }
           }
-          //
-          ROS_INFO("=====");
-          association.header.stamp = ros::Time::now();
           associatied_obstacle_pub.publish(association);
         }
+        //
         cluster_num_old = cluster_num;
-        cluster_x_old.resize(cluster_num_old);
-        cluster_y_old.resize(cluster_num_old);
-        cluster_intensity_old.resize(cluster_num_old);
-        cluster_size_old.resize(cluster_num_old);
+        association_num_max = 0;
         for(int i = 0; i < cluster_num_old; i++){
-          cluster_x_old[i] = cluster_x[i];
-          cluster_y_old[i] = cluster_y[i];
-          cluster_intensity_old[i] = cluster_intensity[i];
-          cluster_size_old[i] = cluster_size[i];
+          if(association_num_max < cluster_association[i] + 1){
+            association_num_max = cluster_association[i] + 1;
+          }
         }
+        cluster_x_old.clear();
+        cluster_y_old.clear();
+        cluster_size_old.clear();
+        cluster_x_old.resize(association_num_max);
+        cluster_y_old.resize(association_num_max);
+        cluster_size_old.resize(association_num_max);
+        for(int i = 0; i < cluster_num_old; i++){
+          cluster_x_old[cluster_association[i]] = cluster_x[i];
+          cluster_y_old[cluster_association[i]] = cluster_y[i];
+          cluster_size_old[cluster_association[i]] = cluster_size[i];
+        }
+/*
+        if(a > 1){
+          break;
+        }
+        a += 1;
+*/
       }
       ros::spinOnce();
     }
@@ -204,9 +232,9 @@ private:
   ros::Publisher associatied_obstacle_pub;
   sensor_msgs::PointCloud association;
   vector<int> cluster_association;
-  vector<float> cluster_x, cluster_y, cluster_intensity, cluster_size;
-  vector<float> cluster_x_old, cluster_y_old, cluster_intensity_old, cluster_size_old;
-  int cluster_num, cluster_num_old, check;
+  vector<float> cluster_x, cluster_y, cluster_size;
+  vector<float> cluster_x_old, cluster_y_old, cluster_size_old;
+  int cluster_num, cluster_num_old, check, association_num_max;
 
 };
 
