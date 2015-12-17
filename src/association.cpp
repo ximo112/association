@@ -87,12 +87,12 @@ public:
   }
 
   void likelihood(){
-    Matrix3f cov;
-    Vector3f ave;
-    Vector3f variable;
-    Vector3f variable_ave;
+    Matrix2f cov;
+    Vector2f ave;
+    Vector2f variable;
+    Vector2f variable_ave;
     int i, j, k, count, alpha = 0, association_num;
-    float log_f[cluster_num], ave_scalar, log_f_likelihood, likelihood_value[cluster_num];
+    float log_f[cluster_num], ave_scalar, log_f_likelihood, likelihood_value[cluster_num], diff[cluster_num], diff_min;
 
     for(i = 0; i < cluster_num; i++){
       cluster_association[i] = -1;
@@ -105,33 +105,33 @@ public:
         //
         ROS_INFO("old:%d, cluster_x_old:%f, cluster_y_old:%f, cluster_size_old:%f", i, cluster_x_old[i], cluster_y_old[i], cluster_size_old[i]);
 
-        cov = Matrix3f::Zero();
-        ave = Vector3f::Zero();
-        variable = Vector3f::Zero();
-        variable_ave = Vector3f::Zero();
+        cov = Matrix2f::Zero();
+        ave = Vector2f::Zero();
+        variable = Vector2f::Zero();
+        variable_ave = Vector2f::Zero();
         for(j = 0; j < cluster_num; j++){
           cov(0, 0) += pow(cluster_x_old[i] - cluster_x[j], 2);
           cov(1, 1) += pow(cluster_y_old[i] - cluster_y[j], 2);
-          cov(2, 2) += pow(cluster_size_old[i] - cluster_size[j], 2);
+//          cov(2, 2) += pow(cluster_size_old[i] - cluster_size[j], 2);
           cov(1, 0) += (cluster_y_old[i] - cluster_y[j]) * (cluster_x_old[i] - cluster_x[j]);
-          cov(2, 0) += (cluster_size_old[i] - cluster_size[j]) * (cluster_x_old[i] - cluster_x[j]);
-          cov(2, 1) += (cluster_size_old[i] - cluster_size[j]) * (cluster_y_old[i] - cluster_y[j]);
+//          cov(2, 0) += (cluster_size_old[i] - cluster_size[j]) * (cluster_x_old[i] - cluster_x[j]);
+//          cov(2, 1) += (cluster_size_old[i] - cluster_size[j]) * (cluster_y_old[i] - cluster_y[j]);
         }
         cov(0, 0) = cov(0, 0) / cluster_num;
         cov(1, 1) = cov(1, 1) / cluster_num;
-        cov(2, 2) = cov(2, 2) / cluster_num;
+//        cov(2, 2) = cov(2, 2) / cluster_num;
         cov(1, 0) = cov(1, 0) / cluster_num;
-        cov(2, 0) = cov(2, 0) / cluster_num;
-        cov(2, 1) = cov(2, 1) / cluster_num;
+//        cov(2, 0) = cov(2, 0) / cluster_num;
+//        cov(2, 1) = cov(2, 1) / cluster_num;
         cov(0, 1) = cov(1, 0);
-        cov(0, 2) = cov(2, 0);
-        cov(1, 2) = cov(2, 1);
+//        cov(0, 2) = cov(2, 0);
+//        cov(1, 2) = cov(2, 1);
 
         ave(0) = cluster_x_old[i];
         ave(1) = cluster_y_old[i];
-        ave(2) = cluster_size_old[i];
-        log_f_likelihood = -FLT_MAX;
+//        ave(2) = cluster_size_old[i];
 
+        log_f_likelihood = -FLT_MAX;
         for(j = 0; j < cluster_num; j++){/*
           log_f[j] = hypotf(cluster_x[j] - cluster_x_old[i], cluster_y[j] - cluster_y_old[i]);
           if(log_f_likelihood > log_f[j] || log_f_likelihood == -1){
@@ -141,12 +141,13 @@ public:
 
           variable(0) = cluster_x[j];
           variable(1) = cluster_y[j];
-          variable(2) = cluster_size[j];
+          //          variable(2) = cluster_size[j];
           variable_ave = variable - ave;
           ave_scalar = variable_ave.transpose() * cov.inverse() * variable_ave;
 
           //多変量正規分布
-          log_f[j] = log(exp(- ave_scalar / 2) / sqrt(pow(2 * M_PI, 3) * cov.determinant()));
+          log_f[j] = log(exp(- ave_scalar / 2) / sqrt(pow(2 * M_PI, 2) * cov.determinant()));
+
           //
           ROS_INFO("log_f:%f, x:%f, y:%f, size:%f", log_f[j], cluster_x[j], cluster_y[j], cluster_size[j]);
 
@@ -158,33 +159,32 @@ public:
         //
         ROS_INFO("aso_num:%d, log_f_likelihood:%f", association_num, log_f_likelihood);
 
-        if(cluster_association[association_num] == -1){
-          cluster_association[association_num] = i;
-          likelihood_value[association_num] = log_f_likelihood;
-        }else{
-          if(likelihood_value[association_num] < log_f_likelihood){
+        if(log_f_likelihood != -FLT_MAX){
+
+          if(cluster_association[association_num] == -1){
             cluster_association[association_num] = i;
             likelihood_value[association_num] = log_f_likelihood;
-          }
-        }
-        
-/*
-        for(j = 0; j < cluster_num; j++){
-          if(log_f_likelihood[i] == log_f[j]){
-            if(cluster_association[j] == -1){
-              likelihood_value[j] = log_f_likelihood[i];
-              cluster_association[j] = i;
-            }else{
-              if(likelihood_value[j] > log_f_likelihood[i]){
-                likelihood_value[j] = log_f_likelihood[i];
-                cluster_association[j] = i;
-              }else{
-                cluster_association[j] = -1;
-              }
+          }else{
+            if(likelihood_value[association_num] < log_f_likelihood){
+              cluster_association[association_num] = i;
+              likelihood_value[association_num] = log_f_likelihood;
             }
-            break;
           }
-        }*/
+
+        }else{
+
+          diff_min = -1;
+          for(j = 0; j < cluster_num; j++){
+            diff[j] = hypotf(cluster_x[j] - cluster_x_old[i], cluster_y[j] - cluster_y_old[i]);
+            if(diff_min > diff[j] || diff_min == -1){
+              diff_min = diff[j];
+              association_num = j;
+            }
+          }
+          cluster_association[association_num] = i;
+          likelihood_value[association_num] = FLT_MAX;
+        }
+
       }
     }
     //
