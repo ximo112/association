@@ -4,7 +4,7 @@
 #include <math.h>
 #include <sstream>
 #define particle_max 10
-#define range 0.1
+#define range 0.05
 
 using namespace Eigen;
 using namespace std;
@@ -129,7 +129,7 @@ public:
         ROS_WARN("%f", log_f_likelihood);////
         for(j = 0; j < cluster_num; j++){
           if(association_num == cluster_association[j]){
-            cluster_association[j] == -1;
+            cluster_association[j] = -1;
           }
         }
         cluster_association[i] = association_num;
@@ -158,6 +158,7 @@ public:
   }
 
   void run(){
+    ros::Rate loop_rate(5);
     callback = false;
     cluster_num_old = 0;
     float hoge_x, hoge_y;
@@ -197,6 +198,7 @@ public:
         }
       }
       ros::spinOnce();
+      loop_rate.sleep();
     }
   }
 private:
