@@ -4,7 +4,7 @@
 #include <math.h>
 #include <sstream>
 #define particle_max 10
-#define range 0.05
+#define range 0.02
 
 using namespace Eigen;
 using namespace std;
