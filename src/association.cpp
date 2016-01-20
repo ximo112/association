@@ -158,7 +158,7 @@ public:
   }
 
   void run(){
-    ros::Rate loop_rate(5);
+    ros::Rate loop_rate(20);
     callback = false;
     cluster_num_old = 0;
     float hoge_x, hoge_y;
