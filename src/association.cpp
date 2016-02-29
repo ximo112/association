@@ -3,8 +3,8 @@
 #include <Eigen/Dense>
 #include <math.h>
 #include <sstream>
-#define particle_max 10
-#define range 0.02
+#define particle_max 10 //散布するパーティクルの数
+#define range 0.02 //散布するパーティクルの範囲
 
 using namespace Eigen;
 using namespace std;
@@ -166,12 +166,11 @@ public:
       if(callback == true){
         callback = false;
         if(cluster_num_old != 0){
+          //前回の観測結果と現在の観測結果の対応関係を尤度関数を用いて行う
           likelihood();
           for(int i = 0; i < cluster_num; i++){
             association.channels[0].values[i] = cluster_association[i];
           }
-          //
-          ROS_INFO("-----");
 
           associatied_obstacle_pub.publish(association);
         }
@@ -183,6 +182,7 @@ public:
             association_num_max = cluster_association[i] + 1;
           }
         }
+        //前回の観測結果より移動後の位置予測としてパーティクルを散布
         cluster_association_old.clear();
         cluster_association_old.resize(cluster_num_old);
         particle_x = MatrixXf::Zero(cluster_num_old, particle_max);
